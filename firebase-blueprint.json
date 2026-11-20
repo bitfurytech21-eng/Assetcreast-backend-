@@ -1,0 +1,269 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Marker document granting administrator privileges to a verified user UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "grantedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Core investor account record without PII (email and joint co-owner PII live in /users/{userId}/private/info).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "accountType": { "type": "string", "enum": ["Individual", "Joint"] },
+        "role": { "type": "string", "enum": ["investor", "admin"] },
+        "referralCode": { "type": "string", "minLength": 2, "maxLength": 32, "pattern": "^[A-Z0-9_\\-]+$" },
+        "avatarDataUrl": { "type": "string", "maxLength": 120000 },
+        "kycStatus": { "type": "string", "enum": ["Unverified", "Pending", "Approved", "Rejected"] },
+        "accountBalance": { "type": "number" },
+        "totalProfit": { "type": "number" },
+        "bonus": { "type": "number" },
+        "referralBonus": { "type": "number" },
+        "totalDeposit": { "type": "number" },
+        "cryptoBalances": { "type": "object" },
+        "lastClaimedTransferId": { "type": "string", "maxLength": 128 },
+        "lastSwapTxId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "accountType",
+        "role",
+        "referralCode",
+        "kycStatus",
+        "accountBalance",
+        "totalProfit",
+        "bonus",
+        "referralBonus",
+        "totalDeposit",
+        "cryptoBalances",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Strictly isolated PII and Joint Account co-owner contact data.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "coOwnerName": { "type": "string", "maxLength": 120 },
+        "coOwnerEmail": { "type": "string", "maxLength": 160 },
+        "relationship": { "type": "string", "maxLength": 60 },
+        "authorizationMode": { "type": "string", "enum": ["Either Owner", "Dual Notice"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "TransferDirectoryEntry": {
+      "title": "TransferDirectoryEntry",
+      "description": "Non-PII exact-lookup routing record mapping a referral code to a recipient UID and display name.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "referralCode": { "type": "string", "minLength": 2, "maxLength": 32, "pattern": "^[A-Z0-9_\\-]+$" },
+        "accountType": { "type": "string", "enum": ["Individual", "Joint"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "referralCode", "accountType", "createdAt", "updatedAt"]
+    },
+    "TransferRequest": {
+      "title": "TransferRequest",
+      "description": "Peer-to-peer USD transfer escrow record settled between registered investors.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "toUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "toName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "toRefCode": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["PendingClaim", "Completed"] },
+        "note": { "type": "string", "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fromUid", "fromName", "toUid", "toName", "toRefCode", "amount", "status", "createdAt", "updatedAt"]
+    },
+    "KycSubmission": {
+      "title": "KycSubmission",
+      "description": "Investor identity submission requiring strict Admin approval before withdrawals unlock.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "legalName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "country": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "documentType": { "type": "string", "enum": ["Passport", "National ID", "Driver License"] },
+        "documentNumber": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "idFrontName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "idFrontDataUrl": { "type": "string", "maxLength": 250000 },
+        "selfieName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "selfieDataUrl": { "type": "string", "maxLength": 250000 },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "submittedAt": { "type": "string", "maxLength": 40 },
+        "reviewedAt": { "type": "string", "maxLength": 40 },
+        "adminNote": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "legalName",
+        "country",
+        "documentType",
+        "documentNumber",
+        "idFrontName",
+        "selfieName",
+        "status",
+        "submittedAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TransactionRecord": {
+      "title": "TransactionRecord",
+      "description": "Financial ledger item covering deposits with receipts, KYC-gated withdrawals, swaps, transfers, and yields.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["Deposit", "Withdrawal", "Transfer Out", "Transfer In", "Swap", "Investment", "Bonus"] },
+        "method": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Completed", "Pending", "Cancelled"] },
+        "date": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "note": { "type": "string", "maxLength": 280 },
+        "proofName": { "type": "string", "maxLength": 140 },
+        "proofDataUrl": { "type": "string", "maxLength": 250000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "type", "method", "amount", "status", "date", "createdAt", "updatedAt"]
+    },
+    "ActiveInvestment": {
+      "title": "ActiveInvestment",
+      "description": "Active investment position across Standard, Vacation ($5k+), and Real Estate portals.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "category": { "type": "string", "enum": ["Standard", "Vacation", "Real Estate"] },
+        "planName": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "amount": { "type": "number" },
+        "dailyRate": { "type": "string", "minLength": 2, "maxLength": 24 },
+        "durationDays": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active"] },
+        "startedAt": { "type": "string", "maxLength": 40 },
+        "meta": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "category", "planName", "amount", "dailyRate", "durationDays", "status", "startedAt", "createdAt", "updatedAt"]
+    },
+    "VisitorLocationLog": {
+      "title": "VisitorLocationLog",
+      "description": "Admin-only geolocation and device telemetry recorded when a referral link (?ref=) is clicked.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reporterUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "refCode": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "clickedUrl": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "latitude": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "longitude": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "accuracyLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "deviceSummary": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "timestamp": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "reporterUid",
+        "refCode",
+        "clickedUrl",
+        "latitude",
+        "longitude",
+        "accuracyLabel",
+        "timezone",
+        "language",
+        "deviceSummary",
+        "timestamp",
+        "createdAt"
+      ]
+    },
+    "ContactTicket": {
+      "title": "ContactTicket",
+      "description": "Support message submitted via Contact Us to one of the two official AssetCrest emails.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderEmail": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "targetDeskEmail": { "type": "string", "enum": ["support@assetcrest.co", "desk@assetcrest.co"] },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "date": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "senderEmail", "targetDeskEmail", "subject", "message", "date", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administrator privilege markers."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Core non-PII investor profile and balances."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Split collection isolating user email and Joint co-owner PII."
+    },
+    "/transferDirectory/{refCode}": {
+      "schema": { "$ref": "#/entities/TransferDirectoryEntry" },
+      "description": "Non-PII exact referral-code routing index for user-to-user transfers."
+    },
+    "/transferRequests/{transferId}": {
+      "schema": { "$ref": "#/entities/TransferRequest" },
+      "description": "P2P transfer escrow items claimed atomically by the recipient."
+    },
+    "/kycSubmissions/{userId}": {
+      "schema": { "$ref": "#/entities/KycSubmission" },
+      "description": "Identity documents awaiting Admin approval to unlock withdrawals."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionRecord" },
+      "description": "Investor financial ledger with optional deposit receipt previews."
+    },
+    "/investments/{invId}": {
+      "schema": { "$ref": "#/entities/ActiveInvestment" },
+      "description": "Active Standard, Vacation Portal ($5,000+), and Real Estate allocations."
+    },
+    "/locationLogs/{logId}": {
+      "schema": { "$ref": "#/entities/VisitorLocationLog" },
+      "description": "Admin-only referral link visitor location logs."
+    },
+    "/tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/ContactTicket" },
+      "description": "Investor support inquiries routed to support@assetcrest.co or desk@assetcrest.co."
+    }
+  }
+}

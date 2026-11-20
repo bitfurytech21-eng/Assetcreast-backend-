@@ -1,0 +1,6 @@
+{
+  "name": "AssetCrest APK & PWA Studio",
+  "description": "Convert web application to Android APK, PWA install center, and TWA builder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

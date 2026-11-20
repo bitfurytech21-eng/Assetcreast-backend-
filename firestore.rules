@@ -1,0 +1,550 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Hardened Helpers
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isVerifiedUser() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'melissamenorsophia@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+        (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidCryptoBalances(cb) {
+      return cb is map
+        && cb.keys().hasAll(['USDC', 'ETH', 'BTC', 'USDT', 'BNB', 'SOL', 'XRP'])
+        && cb.keys().hasOnly(['USDC', 'ETH', 'BTC', 'USDT', 'BNB', 'SOL', 'XRP'])
+        && cb.USDC is number && cb.USDC >= 0
+        && cb.ETH is number && cb.ETH >= 0
+        && cb.BTC is number && cb.BTC >= 0
+        && cb.USDT is number && cb.USDT >= 0
+        && cb.BNB is number && cb.BNB >= 0
+        && cb.SOL is number && cb.SOL >= 0
+        && cb.XRP is number && cb.XRP >= 0;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'accountType', 'role', 'referralCode',
+          'kycStatus', 'accountBalance', 'totalProfit', 'bonus',
+          'referralBonus', 'totalDeposit', 'cryptoBalances', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'accountType', 'role', 'referralCode',
+          'avatarDataUrl', 'kycStatus', 'accountBalance', 'totalProfit',
+          'bonus', 'referralBonus', 'totalDeposit', 'cryptoBalances',
+          'lastClaimedTransferId', 'lastSwapTxId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.accountType in ['Individual', 'Joint']
+        && data.role in ['investor', 'admin']
+        && data.referralCode is string && data.referralCode.size() >= 2 && data.referralCode.size() <= 32 && data.referralCode.matches('^[A-Z0-9_\\-]+$')
+        && (!('avatarDataUrl' in data) || (data.avatarDataUrl is string && data.avatarDataUrl.size() <= 120000))
+        && (!('lastClaimedTransferId' in data) || isValidId(data.lastClaimedTransferId))
+        && (!('lastSwapTxId' in data) || isValidId(data.lastSwapTxId))
+        && data.kycStatus in ['Unverified', 'Pending', 'Approved', 'Rejected']
+        && data.accountBalance is number && data.accountBalance >= 0
+        && data.totalProfit is number && data.totalProfit >= 0
+        && data.bonus is number && data.bonus >= 0
+        && data.referralBonus is number && data.referralBonus >= 0
+        && data.totalDeposit is number && data.totalDeposit >= 0
+        && isValidCryptoBalances(data.cryptoBalances)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'uid', 'email', 'coOwnerName', 'coOwnerEmail',
+          'relationship', 'authorizationMode', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && (!('coOwnerName' in data) || (data.coOwnerName is string && data.coOwnerName.size() <= 120))
+        && (!('coOwnerEmail' in data) || (data.coOwnerEmail is string && data.coOwnerEmail.size() <= 160))
+        && (!('relationship' in data) || (data.relationship is string && data.relationship.size() <= 60))
+        && (!('authorizationMode' in data) || data.authorizationMode in ['Either Owner', 'Dual Notice'])
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransferDirectory(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'referralCode', 'accountType', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'referralCode', 'accountType', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.referralCode is string && data.referralCode.size() >= 2 && data.referralCode.size() <= 32 && data.referralCode.matches('^[A-Z0-9_\\-]+$')
+        && data.accountType in ['Individual', 'Joint']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransferRequest(data) {
+      return data.keys().hasAll([
+          'id', 'fromUid', 'fromName', 'toUid', 'toName',
+          'toRefCode', 'amount', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'fromUid', 'fromName', 'toUid', 'toName',
+          'toRefCode', 'amount', 'status', 'note', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.fromUid)
+        && isValidId(data.toUid)
+        && data.fromUid != data.toUid
+        && data.fromName is string && data.fromName.size() >= 1 && data.fromName.size() <= 120
+        && data.toName is string && data.toName.size() >= 1 && data.toName.size() <= 120
+        && data.toRefCode is string && data.toRefCode.size() >= 2 && data.toRefCode.size() <= 32
+        && data.amount is number && data.amount > 0 && data.amount <= 10000000
+        && data.status in ['PendingClaim', 'Completed']
+        && (!('note' in data) || (data.note is string && data.note.size() <= 240))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidKycSubmission(data) {
+      return data.keys().hasAll([
+          'userId', 'legalName', 'country', 'documentType', 'documentNumber',
+          'idFrontName', 'selfieName', 'status', 'submittedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'legalName', 'country', 'documentType', 'documentNumber',
+          'idFrontName', 'idFrontDataUrl', 'selfieName', 'selfieDataUrl',
+          'status', 'submittedAt', 'reviewedAt', 'adminNote', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.userId)
+        && data.legalName is string && data.legalName.size() >= 2 && data.legalName.size() <= 120
+        && data.country is string && data.country.size() >= 2 && data.country.size() <= 80
+        && data.documentType in ['Passport', 'National ID', 'Driver License']
+        && data.documentNumber is string && data.documentNumber.size() >= 2 && data.documentNumber.size() <= 64
+        && data.idFrontName is string && data.idFrontName.size() >= 1 && data.idFrontName.size() <= 120
+        && (!('idFrontDataUrl' in data) || (data.idFrontDataUrl is string && data.idFrontDataUrl.size() <= 250000))
+        && data.selfieName is string && data.selfieName.size() >= 1 && data.selfieName.size() <= 120
+        && (!('selfieDataUrl' in data) || (data.selfieDataUrl is string && data.selfieDataUrl.size() <= 250000))
+        && data.status in ['Pending', 'Approved', 'Rejected']
+        && data.submittedAt is string && data.submittedAt.size() >= 4 && data.submittedAt.size() <= 40
+        && (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 40))
+        && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'type', 'method', 'amount', 'status', 'date', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'type', 'method', 'amount', 'status', 'date',
+          'note', 'proofName', 'proofDataUrl', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && data.type in ['Deposit', 'Withdrawal', 'Transfer Out', 'Transfer In', 'Swap', 'Investment', 'Bonus']
+        && data.method is string && data.method.size() >= 1 && data.method.size() <= 180
+        && data.amount is number && data.amount >= 0 && data.amount <= 100000000
+        && data.status in ['Completed', 'Pending', 'Cancelled']
+        && data.date is string && data.date.size() >= 4 && data.date.size() <= 40
+        && (!('note' in data) || (data.note is string && data.note.size() <= 280))
+        && (!('proofName' in data) || (data.proofName is string && data.proofName.size() <= 140))
+        && (!('proofDataUrl' in data) || (data.proofDataUrl is string && data.proofDataUrl.size() <= 250000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvestment(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'category', 'planName', 'amount', 'dailyRate',
+          'durationDays', 'status', 'startedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'category', 'planName', 'amount', 'dailyRate',
+          'durationDays', 'status', 'startedAt', 'meta', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && data.category in ['Standard', 'Vacation', 'Real Estate']
+        && data.planName is string && data.planName.size() >= 2 && data.planName.size() <= 140
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && (data.category != 'Vacation' || data.amount >= 5000)
+        && data.dailyRate is string && data.dailyRate.size() >= 2 && data.dailyRate.size() <= 24
+        && data.durationDays is number && data.durationDays >= 1 && data.durationDays <= 3650
+        && data.status in ['Active']
+        && data.startedAt is string && data.startedAt.size() >= 4 && data.startedAt.size() <= 40
+        && (!('meta' in data) || (data.meta is string && data.meta.size() <= 160))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLocationLog(data) {
+      return data.keys().hasAll([
+          'id', 'reporterUid', 'refCode', 'clickedUrl', 'latitude', 'longitude',
+          'accuracyLabel', 'timezone', 'language', 'deviceSummary', 'timestamp', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'reporterUid', 'refCode', 'clickedUrl', 'latitude', 'longitude',
+          'accuracyLabel', 'timezone', 'language', 'deviceSummary', 'timestamp', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.reporterUid)
+        && data.refCode is string && data.refCode.size() >= 1 && data.refCode.size() <= 40
+        && data.clickedUrl is string && data.clickedUrl.size() >= 1 && data.clickedUrl.size() <= 400
+        && data.latitude is string && data.latitude.size() >= 1 && data.latitude.size() <= 64
+        && data.longitude is string && data.longitude.size() >= 1 && data.longitude.size() <= 64
+        && data.accuracyLabel is string && data.accuracyLabel.size() >= 1 && data.accuracyLabel.size() <= 120
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 80
+        && data.language is string && data.language.size() >= 1 && data.language.size() <= 40
+        && data.deviceSummary is string && data.deviceSummary.size() >= 1 && data.deviceSummary.size() <= 160
+        && data.timestamp is string && data.timestamp.size() >= 4 && data.timestamp.size() <= 40
+        && data.createdAt is timestamp;
+    }
+
+    function isValidTicket(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'senderEmail', 'targetDeskEmail', 'subject', 'message', 'date', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'senderEmail', 'targetDeskEmail', 'subject', 'message', 'date', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && data.senderEmail is string && data.senderEmail.size() >= 3 && data.senderEmail.size() <= 160
+        && data.targetDeskEmail in ['support@assetcrest.co', 'desk@assetcrest.co']
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 160
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 2000
+        && data.date is string && data.date.size() >= 4 && data.date.size() <= 40
+        && data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Blocks
+    // -------------------------------------------------------------------------
+
+    // Health check document for SDK testConnection()
+    match /test/{docId} {
+      allow get: if docId == 'connection';
+    }
+
+    // Admin markers
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow write: if false;
+    }
+
+    // Core non-PII user profiles & financial balances
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == userId
+        && (incoming().role == 'investor' || (isBootstrappedAdmin() && incoming().role == 'admin'))
+        && incoming().kycStatus == 'Unverified'
+        && incoming().accountBalance == 0
+        && incoming().totalProfit == 0
+        && incoming().bonus == 0
+        && incoming().referralBonus == 0
+        && incoming().totalDeposit == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Tier 1: Admin adjustments (Deposit credits, Withdrawal refunds, KYC status, Yields)
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'accountBalance', 'totalProfit', 'bonus', 'referralBonus',
+            'totalDeposit', 'kycStatus', 'updatedAt'
+          ]))
+          ||
+          // Tier 2: Owner Actions
+          (isOwner(userId) && incoming().role == existing().role && (
+            // Action A: Edit Display Name, Joint Type, or Avatar
+            (incoming().kycStatus == existing().kycStatus
+              && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'accountType', 'avatarDataUrl', 'updatedAt']))
+            ||
+            // Action B: Mark KYC Submitted (Unverified/Rejected -> Pending) atomically with kycSubmissions doc
+            (existing().kycStatus in ['Unverified', 'Rejected']
+              && incoming().kycStatus == 'Pending'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['kycStatus', 'updatedAt'])
+              && existsAfter(/databases/$(database)/documents/kycSubmissions/$(userId)))
+            ||
+            // Action C: Outgoing Transfer, Investment, or KYC-Verified Withdrawal (strictly decreases USD balance)
+            (incoming().kycStatus == existing().kycStatus
+              && incoming().diff(existing()).affectedKeys().hasOnly(['accountBalance', 'updatedAt'])
+              && incoming().accountBalance < existing().accountBalance)
+            ||
+            // Action D: Claim Incoming P2P Transfer atomically with transferRequests doc
+            (incoming().kycStatus == existing().kycStatus
+              && incoming().diff(existing()).affectedKeys().hasOnly(['accountBalance', 'lastClaimedTransferId', 'updatedAt'])
+              && 'lastClaimedTransferId' in incoming()
+              && get(/databases/$(database)/documents/transferRequests/$(incoming().lastClaimedTransferId)).data.toUid == userId
+              && get(/databases/$(database)/documents/transferRequests/$(incoming().lastClaimedTransferId)).data.status == 'PendingClaim'
+              && getAfter(/databases/$(database)/documents/transferRequests/$(incoming().lastClaimedTransferId)).data.status == 'Completed'
+              && incoming().accountBalance >= existing().accountBalance + get(/databases/$(database)/documents/transferRequests/$(incoming().lastClaimedTransferId)).data.amount - 0.01
+              && incoming().accountBalance <= existing().accountBalance + get(/databases/$(database)/documents/transferRequests/$(incoming().lastClaimedTransferId)).data.amount + 0.01)
+            ||
+            // Action E: Crypto Swap (requires existing holdings and atomic Swap transaction record)
+            (incoming().kycStatus == existing().kycStatus
+              && incoming().diff(existing()).affectedKeys().hasOnly(['accountBalance', 'cryptoBalances', 'lastSwapTxId', 'updatedAt'])
+              && 'lastSwapTxId' in incoming()
+              && (existing().accountBalance > 0
+                || existing().cryptoBalances.USDC > 0
+                || existing().cryptoBalances.USDT > 0
+                || existing().cryptoBalances.BTC > 0
+                || existing().cryptoBalances.ETH > 0
+                || existing().cryptoBalances.BNB > 0
+                || existing().cryptoBalances.SOL > 0
+                || existing().cryptoBalances.XRP > 0)
+              && existsAfter(/databases/$(database)/documents/transactions/$(incoming().lastSwapTxId))
+              && getAfter(/databases/$(database)/documents/transactions/$(incoming().lastSwapTxId)).data.type == 'Swap'
+              && getAfter(/databases/$(database)/documents/transactions/$(incoming().lastSwapTxId)).data.userId == userId)
+          ))
+        );
+
+      // Isolated Private PII & Joint Co-Owner Info
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if isBootstrappedAdmin();
+        allow create: if isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == userId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'email', 'coOwnerName', 'coOwnerEmail', 'relationship', 'authorizationMode', 'updatedAt'
+          ]);
+      }
+    }
+
+    // Non-PII Transfer Routing Directory (exact get by referralCode, no list scraping)
+    match /transferDirectory/{refCode} {
+      allow get: if isValidId(refCode) && isVerifiedUser();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(refCode)
+        && isVerifiedUser()
+        && isValidTransferDirectory(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().referralCode == refCode
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(refCode)
+        && isVerifiedUser()
+        && existing().uid == request.auth.uid
+        && isValidTransferDirectory(incoming())
+        && incoming().uid == existing().uid
+        && incoming().referralCode == existing().referralCode
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'accountType', 'updatedAt']);
+    }
+
+    // Peer-to-Peer Transfer Escrow Requests
+    match /transferRequests/{transferId} {
+      allow get: if isValidId(transferId) && (
+        isAdmin() ||
+        (isVerifiedUser() && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid))
+      );
+      allow list: if isBootstrappedAdmin() || (
+        isVerifiedUser() && (
+          resource.data.fromUid == request.auth.uid ||
+          resource.data.toUid == request.auth.uid
+        )
+      );
+      allow create: if isValidId(transferId)
+        && isVerifiedUser()
+        && isValidTransferRequest(incoming())
+        && incoming().id == transferId
+        && incoming().fromUid == request.auth.uid
+        && incoming().status == 'PendingClaim'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(incoming().toUid));
+      allow update: if isValidId(transferId)
+        && isVerifiedUser()
+        && existing().status == 'PendingClaim'
+        && (existing().toUid == request.auth.uid || isAdmin())
+        && isValidTransferRequest(incoming())
+        && incoming().id == existing().id
+        && incoming().fromUid == existing().fromUid
+        && incoming().toUid == existing().toUid
+        && incoming().amount == existing().amount
+        && incoming().status == 'Completed'
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+
+    // Strict KYC Verification Submissions
+    match /kycSubmissions/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidKycSubmission(incoming())
+        && incoming().userId == userId
+        && incoming().status == 'Pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidKycSubmission(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Admin Approve or Reject
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'reviewedAt', 'adminNote', 'updatedAt'
+          ]))
+          ||
+          // Investor Resubmit only when Pending or Rejected (never overwrite Approved)
+          (isOwner(userId)
+            && existing().status in ['Pending', 'Rejected']
+            && incoming().status == 'Pending'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'legalName', 'country', 'documentType', 'documentNumber',
+              'idFrontName', 'idFrontDataUrl', 'selfieName', 'selfieDataUrl',
+              'status', 'submittedAt', 'updatedAt'
+            ]))
+        );
+    }
+
+    // Transactions Ledger
+    match /transactions/{txId} {
+      allow get: if isValidId(txId) && (
+        isAdmin() ||
+        (isVerifiedUser() && existing().userId == request.auth.uid)
+      );
+      allow list: if isBootstrappedAdmin() || (
+        isVerifiedUser() && resource.data.userId == request.auth.uid
+      );
+      allow create: if isValidId(txId)
+        && isVerifiedUser()
+        && isValidTransaction(incoming())
+        && incoming().id == txId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (incoming().userId == request.auth.uid && (
+            // Deposits with receipt must start Pending or Cancelled
+            (incoming().type == 'Deposit' && incoming().status in ['Pending', 'Cancelled'])
+            ||
+            // Withdrawals require Approved KYC and start Pending
+            (incoming().type == 'Withdrawal'
+              && incoming().status == 'Pending'
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kycStatus == 'Approved')
+            ||
+            // Swaps, Investments, Transfers Out/In
+            (incoming().type in ['Swap', 'Investment', 'Transfer Out', 'Transfer In']
+              && incoming().status == 'Completed')
+          ))
+        );
+      allow update: if isValidId(txId)
+        && isAdmin()
+        && existing().status == 'Pending'
+        && isValidTransaction(incoming())
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'note', 'updatedAt']);
+    }
+
+    // Active Investments (Standard, Vacation >= $5k, Real Estate)
+    match /investments/{invId} {
+      allow get: if isValidId(invId) && (
+        isAdmin() ||
+        (isVerifiedUser() && existing().userId == request.auth.uid)
+      );
+      allow list: if isBootstrappedAdmin() || (
+        isVerifiedUser() && resource.data.userId == request.auth.uid
+      );
+      allow create: if isValidId(invId)
+        && isVerifiedUser()
+        && isValidInvestment(incoming())
+        && incoming().id == invId
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+    }
+
+    // Admin-Only Visitor Location Telemetry
+    match /locationLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(logId)
+        && isVerifiedUser()
+        && isValidLocationLog(incoming())
+        && incoming().id == logId
+        && incoming().reporterUid == request.auth.uid
+        && incoming().createdAt == request.time;
+    }
+
+    // Contact Us Support Tickets
+    match /tickets/{ticketId} {
+      allow get: if isValidId(ticketId) && (
+        isAdmin() ||
+        (isVerifiedUser() && existing().userId == request.auth.uid)
+      );
+      allow list: if isBootstrappedAdmin() || (
+        isVerifiedUser() && resource.data.userId == request.auth.uid
+      );
+      allow create: if isValidId(ticketId)
+        && isVerifiedUser()
+        && isValidTicket(incoming())
+        && incoming().id == ticketId
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+    }
+  }
+}
